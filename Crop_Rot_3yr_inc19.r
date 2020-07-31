@@ -164,6 +164,18 @@ CM_all$pred19=factor(prd19,levels=levels(CM_all$Obs19))
 confusionMatrix(CM_all$pred19,CM_all$Obs19)
 
 
+##seperate observation and predictions into a list by 10km cell
+CM_list <- split(CM_all,CM_all$ID10k)
+
+##apply confusion matrix to each 10km cell to get a spatially explicit accuracy measure
+Acc_10k <- unlist(lapply(CM_list,function(x){return(as.numeric(confusionMatrix(x$pred19,x$Obs19)$overall[1]))}))
+
+##write this accuracy measure back to the dbf file so that this can be viewed easily in arcmap/qgis etc. 
+fishnet$dbf$dbf$Accuracy=NA
+fishnet$dbf$dbf$Accuracy[match(as.integer(names(Acc_10k)),0:3704)]=unlist(Acc_10k)
+
+write.dbf(fishnet$dbf,out.name="Fish10kmPoly_Acc.dbf")
+
 ######
 #still need to add in the backward prediction, though have a working toy example for this. 
 
