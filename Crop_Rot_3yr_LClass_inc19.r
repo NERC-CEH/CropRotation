@@ -14,94 +14,39 @@ library(shapefiles)
 library(reshape2)
 library(caret)
 library(gdata)
+library(data.table)
 
 
 ###################################
 ## 
 ###################################
 
+ite <- read.csv("ite.csv")
 
-#load in the 10km fishnet created in ArcGIS
-fishnet <- read.shapefile("Fish10kmPoly") 
+ite.lst <- split(ite,ite$GRIDREF)
 
-#apply centroid function to fishnet to calculate the centre point of each 10km cell
-cent10km <- data.frame(matrix(unlist(lapply(fishnet$shp$shp,function(x){cent(x$points)})),ncol=2,nrow=length(fishnet$shp$shp),byrow=T))
-names(cent10km)=c("x","y")
+ite.dom <- rbindlist(lapply(ite.lst,function(x){return(x[which.max(x$pc_ite),])}))
 
-#calculate the distances between each pair of 10mk centroids
-dist.mat=as.matrix(dist(cent10km,diag=TRUE))
 
-#read in each of the crop maps produced thus far
-CM_all <- read.dbf("crop_rotation_2015_2019.dbf")$dbf
+mindist.id <- function(x0,y0,x1,y1){
 
-#read in info on the 10km cells and their IDs - this was an overlay between the gid's and the 10km fishnet done in ArcGIS
-fishID <- read.dbf("Ident_Crop10km.dbf") 
+	dst <- sqrt((x0-x1)^2 + (y0-y1)^2)
 
-#match the ID of the polygons in the crops data to those in the fishnet
-mt_id <- match(CM_all[,2],fishID$dbf$gid)
- 
-#pull out corresponding fishnet (eg 10km cell) id to assign to each polygon 
-CM_all$ID10k <- fishID$dbf$FID_Fish10[mt_id]
- 
-#filter out those field parcels without crop data up to 2019
-CM_all <- CM_all[CM_all$recent_yea==2019,]
- 
- 
-#split the rotation column into individual years 
-rots <- mapply(function(x){unlist(strsplit(as.character(x),"_"))},x=CM_all$rotation,SIMPLIFY=FALSE)
+	return(which.min(dst))
 
-#check they all have length 5
-summary(unlist(lapply(rots,length)))
- 
-#split the rotation character into constituent crops for each year.  
-CM_all$Crop2015 <- (unlist(lapply(rots,function(x){return(x[1])})))
-CM_all$Crop2016 <- (unlist(lapply(rots,function(x){return(x[2])})))
-CM_all$Crop2017 <- (unlist(lapply(rots,function(x){return(x[3])})))
-CM_all$Crop2018 <- (unlist(lapply(rots,function(x){return(x[4])})))
-CM_all$Crop2019 <- (unlist(lapply(rots,function(x){return(x[5])})))
- 
- 
-##################
-##################
-
-#remove the entries that do not have an associated 10km grid id. These NAs are because the fishnet overlay needs to be redone with the new collated 2015-2019 dataset
-#once redone, this step will not be needed
-CM_all <- CM_all[-which(is.na(CM_all$ID10k)),]
-
-##################
-################## 
-
- 
-#tidy up data frame  
-CM_all <- CM_all[,c(2,5,10:14,9)]
-
-#find all the crop types
-all.crps <- unique(c(as.character(unique(CM_all[,3])),as.character(unique(CM_all[,4])),as.character(unique(CM_all[,5])),as.character(unique(CM_all[,6])),as.character(unique(CM_all[,7]))))
-	
-#remove any that have been assigned as NA - we will just ignore these for now	
-if(any(all.crps=="NA")){
-	all.crps <- all.crps[-which(all.crps=="NA")]
 }
 
 
-#extract the IDs that represent the different 10km cells
-id10k=unique(CM_all$ID10k)
+ite.id=c()
 
-#match these to the full set of all 10km cells across the UK that are represented in the full fishnet
-mt.id.10k = match(id10k,0:3704)
+for(i.10k in 1:length(cent10km[,1])){
+	
+	ite.id[i.10k] <- mindist.id(x0=cent10km$x[i.10k],y0=cent10km$y[i.10k],x1=ite.dom$east.ll,y1=ite.dom$north.ll) 
+
+}
 
 
-
-#################
-#################
-
-# this sets the bandwidth for the spatial smoothing of the 10km TPMs - it helps convert the distances between 10km cells to weights which will be used
-# in a weighted average of TPMs
-
-mult=25000/0.674
-
-#################
-#################
+SQ10k_LC <- ite.dom$LC2007[(ite.id[mt.id.10k])]
 
 
 ##############################
@@ -119,14 +64,31 @@ all.out <- mapply(fn,ID=id10k,SIMPLIFY=FALSE)
 ## Get the weights defined according to distances between 10km cells
 #apply the weighting function to each 10km cell. this returns a list whereby each entry is the weighting assigned to other 10km cells, given their proximiity to the 10km cell represented by the list entry
 
-all.wgt <- mapply(get.wght,ID=(id10k),SIMPLIFY=FALSE)
+all.wgt <- mapply(get.wght.LC,ID=1:length(mt.id.10k),SIMPLIFY=FALSE)
 
 
 ## Calculate a weighted average of the TPMS  
 #apply the matrix weighted average function to each 10km cell
 #### NOTE THAT THIS CAN TAKE A WHILE TO RUN!! #####
 
-output=mapply(wgt.mat,idx=1:length(all.wgt),SIMPLIFY=FALSE)
+
+output=list()
+output[[1]] <- wgt.mat(1)
+
+for(ik in 2:length(all.wgt)){
+	if(is.element(SQ10k_LC[ik],SQ10k_LC[1:(ik-1)])){
+		lcid <- min(which(SQ10k_LC[1:(ik-1)]==SQ10k_LC[ik]))
+		output[[ik]] <- output[[lcid]] 
+	}else{
+		output[[ik]] <- wgt.mat(ik)
+	}
+
+	print(ik)
+	
+}
+
+
+#output=mapply(wgt.mat,idx=1:length(all.wgt),SIMPLIFY=FALSE)
 
 
 

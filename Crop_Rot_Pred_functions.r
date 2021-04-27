@@ -106,6 +106,96 @@ fn12 <- function(ID){
 }
 
 
+###########################
+###########################
+
+
+#function to calculate 3d transition probability matrix from the frequencies of observations - allowing for 4 year rotations
+fn4 <- function(ID){
+
+	#subset the relevant 10km square
+	res=as.matrix(CM_all[CM_all$ID10k==ID & !is.na(CM_all$ID10k),3:7])
+	res=cbind(res,rep(NA,length(res[,1])))
+		
+	e.res <- embed(unmatrix(res,byrow=T),4)
+	e.res <- e.res[-which(apply(e.res,1,function(x){any(is.na(x) | x=="NA")})),]
+	
+	
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(all.crps[k],NA,NA,NA))}
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(NA,all.crps[k],NA,NA))}
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(NA,NA,all.crps[k],NA))}
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(NA,NA,NA,all.crps[k]))}
+	
+	
+	colnames(e.res) <- c("Y0", "Ym1", "Ym2", "Ym3")
+	 
+	# Count the transitions
+	counts <- table( as.data.frame(e.res) )
+	 
+	# Divide by the total number of transitions, to have probabilities
+	probabilities <- counts
+	probabilities[] <- as.vector(counts) / rep( as.vector(apply( counts, 2:4, sum )), each=dim(counts)[1] )
+
+	# Check that the probabilities sum up to 1
+	#apply( probabilities, 2:3, sum )
+
+	# Convert the 3-dimensional array to a data.frame
+	outdat=dcast( melt( probabilities ), Ym3 + Ym2 + `Ym1` ~ Y0 )
+	
+	#recode any NAs as 0s
+	outdat[is.na(outdat)]=0
+	
+	outdat=outdat[,-(1:3)]
+	
+	outdat
+}
+
+
+############################
+############################
+
+fn12.4 <- function(ID){
+
+		#subset the relevant 10km square
+	res=as.matrix(CM_all[CM_all$ID10k==ID & !is.na(CM_all$ID10k),3:7])
+	res=cbind(res,rep(NA,length(res[,1])))
+		
+	e.res <- embed(unmatrix(res,byrow=T),4)
+	e.res <- e.res[-which(apply(e.res,1,function(x){any(is.na(x) | x=="NA")})),]
+	
+	
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(all.crps[k],NA,NA,NA))}
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(NA,all.crps[k],NA,NA))}
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(NA,NA,all.crps[k],NA))}
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(NA,NA,NA,all.crps[k]))}
+	
+	
+	colnames(e.res) <- c("Y0", "Ym1", "Ym2", "Ym3")
+	 
+	# Count the transitions
+	counts <- table( as.data.frame(e.res) )
+	 
+	# Divide by the total number of transitions, to have probabilities
+	probabilities <- counts
+	probabilities[] <- as.vector(counts) / rep( as.vector(apply( counts, 2:4, sum )), each=dim(counts)[1] )
+
+	# Check that the probabilities sum up to 1
+	#apply( probabilities, 2:3, sum )
+
+	# Convert the 3-dimensional array to a data.frame
+	outdat=dcast( melt( probabilities ), Ym3 + Ym2 + `Ym1` ~ Y0 )
+	
+	#recode any NAs as 0s
+	outdat[is.na(outdat)]=0
+	
+	#outdat=outdat[,-(1:3)]
+	
+	outdat
+
+}
+
+
+##############################
 ##############################
 
 
@@ -116,6 +206,30 @@ get.wght=function(ID){
 	wght=dnorm(x/mult)
 
 	wght=wght[mt.id.10k]
+
+	wght
+	
+}
+
+
+
+#use a classification to determine averaging across sets
+get.wght.LC=function(ID){
+
+	x=rep(0,length(mt.id.10k))
+	li=which(SQ10k_LC==SQ10k_LC[ID])
+	x[li]=1
+	
+	wght=x
+
+	wght
+	
+}
+
+#assign all weights equal - equivalent to full average
+get.wght.All=function(ID){
+
+	wght=rep(1,length(mt.id.10k))
 
 	wght
 	
@@ -170,16 +284,31 @@ predfor <- function(output,CM_all,id10k,mat.cats){
 		#extract corresponding rows of TPM
 		cat.mat = output[[k]][mat.cats[vid],]
 		
+		
 		#if there is only 1 row extracted, then just sample from this, probabilistically sampling the next crop type
 		if(is.null(dim(cat.mat))){
+			if(any(is.na(cat.mat))){pred.crop[vid]=NA}else{
+			pred.crop[vid]=CROPS[sample(1:length(CROPS),1,prob=as.numeric(cat.mat))]
+			}
+			
+		#if multiple row are extract from TPM then sample across each row iteratively, probabilistically sampling the next crop type	
+		}else{
+		
+			na.id.rm <- which(apply(cat.mat,1,function(x){any(is.na(x))}))
+			if(length(na.id.rm)>0){
+				pred.crop[vid[na.id.rm]]=NA
+				cat.mat=cat.mat[-na.id.rm,]
+				vid=vid[-na.id.rm]
+			}
+			if(length(vid)>length(na.id.rm)){
+			if(is.null(dim(cat.mat))){
 		
 			pred.crop[vid]=CROPS[sample(1:length(CROPS),1,prob=as.numeric(cat.mat))]
 
-		#if multiple row are extract from TPM then sample across each row iteratively, probabilistically sampling the next crop type	
-		}else{
-			
-			pred.crop[vid]=CROPS[apply(cat.mat,1,function(x){sample(1:length(CROPS),1,prob=as.numeric(x))})]
-		
+			#if multiple row are extract from TPM then sample across each row iteratively, probabilistically sampling the next crop type	
+			}else{pred.crop[vid]=CROPS[apply(cat.mat,1,function(x){sample(1:length(CROPS),1,prob=as.numeric(x))})]
+				#pred.crop[vid]=CROPS[apply(cat.mat,1,function(x){which.max(x)})]
+			}}
 		}
 		
 		#print out iteration of loop for users info
@@ -199,3 +328,175 @@ predback <- function(output,CM_all,id10k,mat.cats){
 ##still to do
 
 }
+
+
+
+
+
+#function to calculate 3d transition probability matrix from the frequencies of observations
+fnr3 <- function(ID){
+
+	#subset the relevant 10km square
+	res=as.matrix(CM_all[CM_all$ID10k==ID & !is.na(CM_all$ID10k),5:7])
+	res=cbind(res,rep(NA,length(res[,1])))
+	
+	e.res <- embed(unmatrix(res,byrow=T),3)
+	e.res <- e.res[-which(apply(e.res,1,function(x){any(is.na(x) | x=="NA")})),]
+
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(all.crps[k],NA,NA))}
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(NA,all.crps[k],NA))}
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(NA,NA,all.crps[k]))}
+
+	
+	colnames(e.res) <- c("Y0", "Ym1", "Ym2")
+	 
+	# Count the transitions
+	counts <- table( as.data.frame(e.res) )
+	 
+	# Divide by the total number of transitions, to have probabilities
+	probabilities <- counts
+	probabilities[] <- as.vector(counts) / rep( as.vector(apply( counts, 2:3, sum )), each=dim(counts)[1] )
+
+	# Check that the probabilities sum up to 1
+	#apply( probabilities, 2:3, sum )
+
+	# Convert the 3-dimensional array to a data.frame
+	outdat=dcast( melt( probabilities ), Ym2 + `Ym1` ~ Y0 )
+	
+	#recode any NAs as 0s
+	outdat[is.na(outdat)]=0
+	
+	outdat=outdat[,-(1:2)]
+	
+	outdat
+}
+
+##############################
+
+
+fnr312 <- function(ID){
+
+	#subset the relevant 10km square
+	res=as.matrix(CM_all[CM_all$ID10k==ID & !is.na(CM_all$ID10k),5:7])
+	res=cbind(res,rep(NA,length(res[,1])))
+	
+	e.res <- embed(unmatrix(res,byrow=T),3)
+	e.res <- e.res[-which(apply(e.res,1,function(x){any(is.na(x) | x=="NA")})),]
+
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(all.crps[k],NA,NA))}
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(NA,all.crps[k],NA))}
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(NA,NA,all.crps[k]))}
+
+	
+	colnames(e.res) <- c("Y0", "Ym1", "Ym2")
+	 
+	# Count the transitions
+	counts <- table( as.data.frame(e.res) )
+	 
+	# Divide by the total number of transitions, to have probabilities
+	probabilities <- counts
+	probabilities[] <- as.vector(counts) / rep( as.vector(apply( counts, 2:3, sum )), each=dim(counts)[1] )
+
+	# Check that the probabilities sum up to 1
+	#apply( probabilities, 2:3, sum )
+
+	# Convert the 3-dimensional array to a data.frame
+	outdat=dcast( melt( probabilities ), Ym2 + `Ym1` ~ Y0 )
+	
+	#recode any NAs as 0s
+	outdat[is.na(outdat)]=0
+	
+	#outdat=outdat[,-(1:2)]
+	
+	outdat
+}
+
+
+###########################
+#####
+
+
+#function to calculate 3d transition probability matrix from the frequencies of observations - allowing for 4 year rotations
+fnr34 <- function(ID){
+
+	#subset the relevant 10km square
+	res=as.matrix(CM_all[CM_all$ID10k==ID & !is.na(CM_all$ID10k),3:7])
+	res=cbind(res,rep(NA,length(res[,1])))
+		
+	e.res <- embed(unmatrix(res,byrow=T),4)
+	e.res <- e.res[-which(apply(e.res,1,function(x){any(is.na(x) | x=="NA")})),]
+	
+	
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(all.crps[k],NA,NA,NA))}
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(NA,all.crps[k],NA,NA))}
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(NA,NA,all.crps[k],NA))}
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(NA,NA,NA,all.crps[k]))}
+	
+	
+	colnames(e.res) <- c("Y0", "Ym1", "Ym2", "Ym3")
+	 
+	# Count the transitions
+	counts <- table( as.data.frame(e.res) )
+	 
+	# Divide by the total number of transitions, to have probabilities
+	probabilities <- counts
+	probabilities[] <- as.vector(counts) / rep( as.vector(apply( counts, 2:4, sum )), each=dim(counts)[1] )
+
+	# Check that the probabilities sum up to 1
+	#apply( probabilities, 2:3, sum )
+
+	# Convert the 3-dimensional array to a data.frame
+	outdat=dcast( melt( probabilities ), Ym3 + Ym2 + `Ym1` ~ Y0 )
+	
+	#recode any NAs as 0s
+	outdat[is.na(outdat)]=0
+	
+	outdat=outdat[,-(1:3)]
+	
+	outdat
+}
+
+
+############################
+############################
+
+fnr312.4 <- function(ID){
+
+		#subset the relevant 10km square
+	res=as.matrix(CM_all[CM_all$ID10k==ID & !is.na(CM_all$ID10k),3:7])
+	res=cbind(res,rep(NA,length(res[,1])))
+		
+	e.res <- embed(unmatrix(res,byrow=T),4)
+	e.res <- e.res[-which(apply(e.res,1,function(x){any(is.na(x) | x=="NA")})),]
+	
+	
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(all.crps[k],NA,NA,NA))}
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(NA,all.crps[k],NA,NA))}
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(NA,NA,all.crps[k],NA))}
+	for(k in 1:length(all.crps)){e.res=rbind(e.res,c(NA,NA,NA,all.crps[k]))}
+	
+	
+	colnames(e.res) <- c("Y0", "Ym1", "Ym2", "Ym3")
+	 
+	# Count the transitions
+	counts <- table( as.data.frame(e.res) )
+	 
+	# Divide by the total number of transitions, to have probabilities
+	probabilities <- counts
+	probabilities[] <- as.vector(counts) / rep( as.vector(apply( counts, 2:4, sum )), each=dim(counts)[1] )
+
+	# Check that the probabilities sum up to 1
+	#apply( probabilities, 2:3, sum )
+
+	# Convert the 3-dimensional array to a data.frame
+	outdat=dcast( melt( probabilities ), Ym3 + Ym2 + `Ym1` ~ Y0 )
+	
+	#recode any NAs as 0s
+	outdat[is.na(outdat)]=0
+	
+	#outdat=outdat[,-(1:3)]
+	
+	outdat
+
+}
+
